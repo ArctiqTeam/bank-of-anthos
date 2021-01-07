@@ -80,10 +80,12 @@ describe('Authenticated default user', function () {
 
     it('sees expected recipients', function () {
         cy.get('#paymentSpan').click()
-        cy.get('#payment-accounts').children().contains("1044226144")
+        cy.get('#payment-accounts').children().contains("1033623433")
         cy.get('#payment-accounts').children().contains("1055757655")
+        cy.get('#payment-accounts').children().contains("1077441377")
         cy.get('#payment-accounts').contains("Alice")
         cy.get('#payment-accounts').contains("Bob")
+        cy.get('#payment-accounts').contains("Eve")
 
     })
 
@@ -91,7 +93,7 @@ describe('Authenticated default user', function () {
         const paymentAmount = validPayment()
 
         cy.transfer(recipient, paymentAmount)
-        cy.get('.alert').contains(transferMsgs.success)
+        cy.get('#alert-message').contains(transferMsgs.success)
     })
 
     it('see balance update after transfer', function () {
@@ -102,10 +104,13 @@ describe('Authenticated default user', function () {
             const currentBalanceSpan = $span.text()
             // regex: removes any characters that are not a digit [0-9] or a period [.]
             const currentBalance = parseFloat(currentBalanceSpan.replace(/[^\d.]/g, '')).toFixed(2)
-            expectedBalance = formatter.format(currentBalance - parseFloat(paymentAmount).toFixed(2))
-            cy.transfer(recipient, paymentAmount)
 
-            cy.get('.alert').contains(transferMsgs.success)
+            // ignore cents to avoid float percision errors
+            expectedBalance = formatter.format(currentBalance - parseFloat(paymentAmount).toFixed(2))
+                                       .split('.')[0]
+
+            cy.transfer(recipient, paymentAmount)
+            cy.get('#alert-message').contains(transferMsgs.success)
         })
         cy.visit('/home')
         cy.get('#current-balance').then(($span) => {
@@ -115,10 +120,10 @@ describe('Authenticated default user', function () {
 
     })
 
+    // TODO: [issue-300]
     it('see transaction in history after transfer', function () {
         const paymentAmount = validPayment()
-        cy.transfer(recipient, paymentAmount)
-        cy.get('.alert').contains(transferMsgs.success)
+        cy.transferRequest(recipient.accountNum, paymentAmount)
         cy.visit('/home')
 
         cy.get('#transaction-table').find('tbody>tr').as('latest')
@@ -126,7 +131,6 @@ describe('Authenticated default user', function () {
         cy.get('@latest').find('.transaction-account').contains(recipient.accountNum)
         cy.get('@latest').find('.transaction-type').contains('Credit')
         cy.get('@latest').find('.transaction-amount').contains(paymentAmount)
-
 
     })
 
@@ -140,7 +144,7 @@ describe('Authenticated default user', function () {
         const paymentAmount = validPayment()
 
         cy.transferToNewContact(newRecipient, paymentAmount)
-        cy.get('.alert').contains(transferMsgs.success)
+        cy.get('#alert-message').contains(transferMsgs.success)
         cy.get('#paymentSpan').click()
         cy.get('#payment-accounts').contains(newRecipient.contactLabel)
         cy.get('#payment-accounts').contains(newRecipient.accountNum)
@@ -219,8 +223,8 @@ describe('Transfer is unsuccessful with invalid data', function () {
         const paymentAmount = validPayment()
 
         cy.transferToNewContact(self, paymentAmount)
-        cy.get('.alert').contains(transferMsgs.error)
-        cy.get('.alert').contains(transferMsgs.errSelf)
+        cy.get('#alert-message').contains(transferMsgs.error)
+        cy.get('#alert-message').contains(transferMsgs.errSelf)
     })
 
 })

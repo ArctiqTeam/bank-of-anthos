@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+const uuid = () => Cypress._.random(0, 1e6)
 Cypress.Commands.add('login', (username, password) => {
     Cypress.log({
         name: 'login',
@@ -88,9 +88,9 @@ Cypress.Commands.add('depositToNewAccount', (externalAccount, depositAmount) => 
     cy.get('#depositSpan').click() 
     cy.get('#depositFunds').should('be.visible') 
     cy.get('#accounts').select('add')
-    cy.get('#external_account_num').type(externalAccount.accountNum)
-    cy.get('#external_routing_num').type(externalAccount.routingNum)
-    cy.get('#external_label').type(externalAccount.contactLabel)
+    cy.get('#external_account_num').clear().type(externalAccount.accountNum)
+    cy.get('#external_routing_num').clear().type(externalAccount.routingNum)
+    cy.get('#external_label').clear().type(externalAccount.contactLabel)
     cy.get('#deposit-amount').clear().type(depositAmount)
     cy.get('#deposit-form').submit()
 
@@ -108,6 +108,32 @@ Cypress.Commands.add('transfer', (recipient, paymentAmount) => {
     cy.get('#payment-form').submit()
 })
 
+// transfers through request
+Cypress.Commands.add('transferRequest', (recipientAccount, paymentAmount) => {
+    Cypress.log({
+        name: 'transferRequest',
+        message: `${recipientAccount}` | `${paymentAmount}`,
+    })
+
+    const id = uuid()
+
+    const contact_account_num = ''
+    const contact_label = ''
+
+      return cy.request({
+        method: 'POST',
+        url: '/payment', 
+        form: true, 
+        body: {
+            account_num: recipientAccount,
+            contact_account_num: contact_account_num,
+            contact_label: contact_label,
+            amount: paymentAmount,
+            uuid: id
+        },
+      })
+
+})
 
 // transfers to a new account through UI
 Cypress.Commands.add('transferToNewContact', (recipient, paymentAmount) => {
@@ -117,8 +143,8 @@ Cypress.Commands.add('transferToNewContact', (recipient, paymentAmount) => {
     }) 
     cy.get('#paymentSpan').click() 
     cy.get('#payment-accounts').select("add")
-    cy.get('#contact_account_num').type(recipient.accountNum)
-    cy.get('#contact_label').type(recipient.contactLabel)
+    cy.get('#contact_account_num').clear().type(recipient.accountNum)
+    cy.get('#contact_label').clear().type(recipient.contactLabel)
     cy.get('#payment-amount').clear().type(paymentAmount)
     cy.get('#payment-form').submit()
 })

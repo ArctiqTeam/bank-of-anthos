@@ -23,18 +23,26 @@ import os
 import re
 import sys
 
+import jwt
 from flask import Flask, jsonify, request
 import bleach
-import jwt
-from db import ContactsDb
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from db import ContactsDb
 
+from opentelemetry import trace
+from opentelemetry.sdk.trace.export import BatchExportSpanProcessor
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.propagators import set_global_textmap
+from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+from opentelemetry.tools.cloud_trace_propagator import CloudTraceFormatPropagator
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
 
 def create_app():
     """Flask application factory to create instances
     of the Contact Service Flask App
     """
     app = Flask(__name__)
+
 
     # Disabling unused-variable for lines with route decorated functions
     # as pylint thinks they are unused
@@ -71,11 +79,13 @@ def create_app():
                 raise PermissionError
 
             contacts_list = contacts_db.get_contacts(username)
+            app.logger.debug("Succesfully retrieved contacts.")
             return jsonify(contacts_list), 200
-        except (PermissionError, jwt.exceptions.InvalidTokenError):
+        except (PermissionError, jwt.exceptions.InvalidTokenError) as err:
+            app.logger.error("Error retrieving contacts list: %s", str(err))
             return "authentication denied", 401
         except SQLAlchemyError as err:
-            app.logger.error(err)
+            app.logger.error("Error retrieving contacts list: %s", str(err))
             return "failed to retrieve contacts list", 500
 
     @app.route("/contacts/<username>", methods=["POST"])
@@ -118,17 +128,22 @@ def create_app():
                 "is_external": req["is_external"],
             }
             # Add contact_data to database
+            app.logger.debug("Adding new contact to the database.")
             contacts_db.add_contact(contact_data)
+            app.logger.info("Successfully added new contact.")
             return jsonify({}), 201
 
-        except (PermissionError, jwt.exceptions.InvalidTokenError):
+        except (PermissionError, jwt.exceptions.InvalidTokenError) as err:
+            app.logger.error("Error adding contact: %s", str(err))
             return "authentication denied", 401
         except UserWarning as warn:
+            app.logger.error("Error adding contact: %s", str(warn))
             return str(warn), 400
         except ValueError as err:
+            app.logger.error("Error adding contact: %s", str(err))
             return str(err), 409
         except SQLAlchemyError as err:
-            app.logger.error(err)
+            app.logger.error("Error adding contact: %s", str(err))
             return "failed to add contact", 500
 
     def _validate_new_contact(req):
@@ -155,6 +170,7 @@ def create_app():
 
     def _check_contact_allowed(username, accountid, req):
         """Check that this contact is allowed to be created"""
+        app.logger.debug("checking that this contact is allowed to be created: %s", str(req))
         # Don't allow self reference
         if (req["account_num"] == accountid and req["routing_num"] == app.config["LOCAL_ROUTING"]):
             raise ValueError("may not add yourself to contacts")
@@ -171,11 +187,27 @@ def create_app():
     @atexit.register
     def _shutdown():
         """Executed when web app is terminated."""
-        app.logger.info("Stopping flask.")
+        app.logger.info("Stopping contacts service.")
 
     # set up logger
     app.logger.handlers = logging.getLogger("gunicorn.error").handlers
     app.logger.setLevel(logging.getLogger("gunicorn.error").level)
+    app.logger.info("Starting contacts service.")
+
+    # Set up tracing and export spans to Cloud Trace.
+    if os.environ['ENABLE_TRACING'] == "true":
+        app.logger.info("✅ Tracing enabled.")
+        # Set up tracing and export spans to Cloud Trace
+        trace.set_tracer_provider(TracerProvider())
+        cloud_trace_exporter = CloudTraceSpanExporter()
+        trace.get_tracer_provider().add_span_processor(
+            BatchExportSpanProcessor(cloud_trace_exporter)
+        )
+        set_global_textmap(CloudTraceFormatPropagator())
+        FlaskInstrumentor().instrument_app(app)
+    else:
+        app.logger.info("🚫 Tracing disabled.")
+
 
     # setup global variables
     app.config["VERSION"] = os.environ.get("VERSION")
